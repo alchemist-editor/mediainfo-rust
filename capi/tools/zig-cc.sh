@@ -16,6 +16,10 @@ for a in "$@"; do
   case "$a" in
     -arch) skip_next=1 ;;
     -nodefaultlibs|-Wl,-dead_strip) ;;
+    # The libc crate links libiconv on Apple targets for declarations nothing
+    # here calls, and Zig's macOS stubs carry libSystem alone: an iconv
+    # symbol actually used would still fail the link as undefined.
+    -liconv) ;;
     -Wl,*.def) out="$out '${a#-Wl,}'" ;;
     -nolibc|--unwindlib=none|-lmingw32|-lmingwex|-lmsvcrt|-lgcc_eh|-lgcc|-l:libpthread.a) ;;
     *) out="$out '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'" ;;
