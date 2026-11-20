@@ -8,9 +8,14 @@ use std::path::Path;
 
 const WINDOW: usize = 256 * 1024;
 
+/// A caller's random-access read: fill `buf` from absolute `offset` and
+/// return how many bytes were written (fewer at end of input, 0 on error).
+pub type ReadFn = Box<dyn FnMut(u64, &mut [u8]) -> usize>;
+
 enum Source {
     File(File),
     Memory(Vec<u8>),
+    Callback(ReadFn),
 }
 
 /// Random-access reader with a cursor and a sliding cache window.
@@ -33,6 +38,13 @@ impl Reader {
     pub fn from_bytes(data: Vec<u8>) -> Self {
         let len = data.len() as u64;
         Self { src: Source::Memory(data), len, pos: 0, win_pos: 0, win: Vec::new(), error: None }
+    }
+
+    /// Read through `read`, for sources that are neither a path nor already
+    /// in memory (a browser `File`, an object store): only the windows the
+    /// parsers ask for are ever requested.
+    pub fn from_callback(len: u64, read: ReadFn) -> Self {
+        Self { src: Source::Callback(read), len, pos: 0, win_pos: 0, win: Vec::new(), error: None }
     }
 
     pub fn len(&self) -> u64 {
@@ -93,6 +105,20 @@ impl Reader {
                         }
                     }
                     Err(error) => { self.error.get_or_insert(error); }
+                }
+                self.win.truncate(got);
+            }
+            Source::Callback(read) => {
+                self.win.clear();
+                self.win.resize(want, 0);
+                let mut got = 0;
+                while got < want {
+                    let n = read(pos + got as u64, &mut self.win[got..]).min(want - got);
+                    if n == 0 {
+                        self.error.get_or_insert_with(|| std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "media source ended before its recorded length"));
+                        break;
+                    }
+                    got += n;
                 }
                 self.win.truncate(got);
             }

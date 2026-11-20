@@ -174,6 +174,26 @@ impl MediaInfo {
         self.run(reader, &ext, &info)
     }
 
+    /// Analyse input read through `read` (see [`io::Reader::from_callback`]).
+    /// `len` is the input's size; `name` supplies the extension hint and `CompleteName`.
+    /// Returns `false` for unrecognised input, short reads or caught parser panics; use
+    /// [`Self::try_open_reader`] for error details.
+    pub fn open_reader(&mut self, len: u64, read: io::ReadFn, name: Option<&str>) -> bool {
+        self.try_open_reader(len, read, name).unwrap_or(false)
+    }
+
+    /// Analyse input read through `read`, catching unwinding parser panics. A callback that
+    /// returns fewer bytes than the input's recorded `len` is an [`OpenError::Io`]
+    /// (`UnexpectedEof`). Recognition results, handle state and panic-guard limitations match
+    /// [`Self::try_open`].
+    pub fn try_open_reader(&mut self, len: u64, read: io::ReadFn, name: Option<&str>) -> Result<bool, OpenError> {
+        self.close();
+        let reader = Reader::from_callback(len, read);
+        let info = FileInfo { path: name.map(Into::into), size: len, modified: None };
+        let ext = name.map(|n| finish::extension_of(Path::new(n))).unwrap_or_default();
+        self.run(reader, &ext, &info)
+    }
+
     fn run(&mut self, reader: Reader, ext: &str, info: &FileInfo) -> Result<bool, OpenError> {
         // The reader (including any I/O error) and document belong to this operation and are
         // discarded on panic. No partially updated handle or reader crosses the unwind boundary.
