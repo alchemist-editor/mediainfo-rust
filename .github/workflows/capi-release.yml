@@ -1,0 +1,143 @@
+name: C ABI release
+
+# Builds mediainfo-capi as a shared library for every platform Alchemist ships
+# and attaches one archive per target to a GitHub release:
+#
+#   git tag capi-v0.1.0 && git push origin capi-v0.1.0
+#
+# The tag is `capi-v*`, not `v*`, so it does not start release.yml (which
+# publishes the upstream crate and CLI binaries). Pull requests that touch the
+# library and manual runs build and test without releasing.
+#
+# Every macOS and Windows library cross-builds on one Linux runner with Zig as
+# the linker (capi/tools/build-shared.sh has the details): no Xcode and no
+# Visual Studio, so Alchemist's own vendor script can rebuild the same files
+# from source on any machine. The jobs on macOS and Windows only prove that
+# what Linux built loads there: on Windows the caller is built by MSVC, which
+# is what Alchemist Pro's Windows build is.
+
+on:
+  push:
+    tags: ["capi-v*"]
+  pull_request:
+    paths: ["capi/**", "src/**", "Cargo.*", ".github/workflows/capi-release.yml"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  ZIG_VERSION: 0.17.0
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: capi
+      - working-directory: capi
+        run: cargo test --release --locked
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: aarch64-apple-darwin }
+          - { os: ubuntu-latest, target: x86_64-apple-darwin }
+          - { os: ubuntu-latest, target: x86_64-pc-windows-gnullvm }
+          - { os: ubuntu-latest, target: aarch64-pc-windows-gnullvm }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: capi
+          key: ${{ matrix.target }}
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Build and package
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#capi-v}"
+          case "$GITHUB_REF_NAME" in capi-v*) ;; *) version="dev" ;; esac
+          capi/tools/build-shared.sh "${{ matrix.target }}" dist "$version"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*.tar.gz*
+
+  load:
+    name: Load on ${{ matrix.target }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-13, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-gnullvm }
+          - { os: windows-11-arm, target: aarch64-pc-windows-gnullvm }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist
+      - name: Unpack
+        shell: bash
+        run: |
+          cd dist && tar xzf *.tar.gz && rm *.tar.gz*
+          mv mediainfo-capi-* pkg
+      - name: Smoke test (MSVC caller)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set VS=%%i
+          if "%PROCESSOR_ARCHITECTURE%"=="ARM64" (call "%VS%\VC\Auxiliary\Build\vcvarsarm64.bat") else (call "%VS%\VC\Auxiliary\Build\vcvars64.bat")
+          cl /nologo /MT /O2 /Idist\pkg\include capi\tests\smoke.c dist\pkg\lib\mediainfo_capi.lib /Fe:smoke.exe || exit /b 1
+          copy dist\pkg\lib\mediainfo_capi.dll . || exit /b 1
+          smoke.exe tests\fixtures\aac.m4a
+      - name: Smoke test
+        if: runner.os != 'Windows'
+        run: |
+          cc -O2 -Idist/pkg/include capi/tests/smoke.c -Ldist/pkg/lib -lmediainfo_capi -Wl,-rpath,"$PWD/dist/pkg/lib" -o smoke
+          ./smoke tests/fixtures/aac.m4a
+
+  release:
+    name: Publish
+    if: startsWith(github.ref, 'refs/tags/capi-v')
+    needs: load
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: C ABI ${{ github.ref_name }}
+          files: dist/*
+          body: |
+            mediainfo-capi shared libraries for Alchemist, built from ${{ github.sha }}.
+            One archive per Rust target, each with a .sha256 beside it. Each holds
+            lib/ (the library; on Windows also MSVC and MinGW import libraries),
+            include/mediainfo_capi.h, LICENSE and COMMIT.
