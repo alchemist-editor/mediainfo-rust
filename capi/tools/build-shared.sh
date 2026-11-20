@@ -14,7 +14,7 @@
 # macOS 11.0 (Alchemist Pro's LSMinimumSystemVersion).
 # Windows: x86_64/aarch64-pc-windows-gnullvm, against the Universal C Runtime
 # (part of Windows 10 and later). The C ABI hands back only memory the DLL
-# frees itself (mi_free) and the library aborts on panic, so the DLL loads
+# frees itself (mi_free) and catches a parser panic inside, so the DLL loads
 # into an MSVC-built program like any other; lib/ carries both a MinGW
 # import library (.dll.a) and an MSVC one (.lib), made by zig dlltool from
 # the DLL's exports.

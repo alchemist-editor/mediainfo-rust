@@ -17,8 +17,9 @@ one target. macOS and Windows targets cross-build from Linux or macOS with Zig
 | `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `libmediainfo_capi.so` | host cc |
 
 The Windows DLL needs no MSVC toolchain to build and loads into MSVC-built
-programs: it hands back only memory it frees itself (`mi_free`) and aborts
-rather than unwinding on a panic. `tests/smoke.c` checks exactly that from a
+programs: it hands back only memory it frees itself (`mi_free`), and a
+parser panic is caught inside the library and reported as the JSON's
+`error`, so nothing unwinds across the C ABI. `tests/smoke.c` checks exactly that from a
 `cl`-built caller in CI.
 
 ## Releases
