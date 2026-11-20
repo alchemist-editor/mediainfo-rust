@@ -32,6 +32,9 @@ for a in "$@"; do
     # symbol actually used would still fail the link as undefined.
     -liconv) ;;
     -Wl,*.def) out="$out '${a#-Wl,}'" ;;
+    # Newer Rust asks the clang driver for libunwind instead of naming it;
+    # -lunwind is how zig cc links its own.
+    --unwindlib=libunwind) out="$out -lunwind" ;;
     -nolibc|--unwindlib=*|-static-libgcc|-lmingw32|-lmingwex|-lmsvcrt|-lgcc_eh|-lgcc|-l:libpthread.a) ;;
     # Newer Rust std links WaitOnAddress and friends from synchronization,
     # an import library Zig's MinGW-w64 set lacks: make it from its .def.
