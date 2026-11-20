@@ -12,9 +12,9 @@ name: C ABI release
 # Every macOS and Windows library cross-builds on one Linux runner with Zig as
 # the linker (capi/tools/build-shared.sh has the details): no Xcode and no
 # Visual Studio, so Alchemist's own vendor script can rebuild the same files
-# from source on any machine. The jobs on macOS and Windows only prove that
-# what Linux built loads there: on Windows the caller is built by MSVC, which
-# is what Alchemist Pro's Windows build is.
+# from source on any machine. Intel macOS is built and packaged but has no
+# native smoke job. The other targets get native load tests; Windows uses an
+# MSVC-built caller to match Alchemist Pro's Windows build.
 
 on:
   push:
@@ -89,7 +89,6 @@ jobs:
       matrix:
         include:
           - { os: macos-latest, target: aarch64-apple-darwin }
-          - { os: macos-13, target: x86_64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-gnullvm }
           - { os: windows-11-arm, target: aarch64-pc-windows-gnullvm }
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
