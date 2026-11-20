@@ -14,6 +14,8 @@ uint32_t mi_capi_abi_version(void);
 
 /* Every non-empty field of the input as UTF-8 JSON:
  *   {"recognised":true,"fields":[{"stream":"Video","index":0,"key":"Width","value":"960"},...]}
+ * A read that comes up short of `size`, or a parser panic caught by the
+ * library, adds "error":"<message>" and leaves "fields" empty.
  * `name` (may be NULL) is the file name, for the extension hint. Free the
  * result with mi_free(ptr, *out_len). NULL only when out of memory. */
 uint8_t *mi_extract(uint64_t size, mi_read_fn read, void *ctx,

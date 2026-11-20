@@ -2,7 +2,7 @@
 //! input read through the caller's range-read callback, as one JSON document.
 //! Built as a static library for native hosts and for wasm32.
 
-use mediainfo::{MediaInfo, StreamKind};
+use mediainfo::{MediaInfo, OpenError, StreamKind};
 use std::ffi::c_void;
 
 pub const ABI: u32 = 1;
@@ -15,9 +15,13 @@ pub extern "C" fn mi_capi_abi_version() -> u32 {
 }
 
 /// The JSON report of `mi_extract` for an analysed handle.
-pub fn fields_json(mi: &MediaInfo, recognised: bool) -> String {
+pub fn fields_json(mi: &MediaInfo, result: &Result<bool, OpenError>) -> String {
     let mut out = String::from("{\"recognised\":");
-    out.push_str(if recognised { "true" } else { "false" });
+    out.push_str(if matches!(result, Ok(true)) { "true" } else { "false" });
+    if let Err(error) = result {
+        out.push_str(",\"error\":");
+        string(&mut out, &error.to_string());
+    }
     out.push_str(",\"fields\":[");
     let mut first = true;
     for kind in StreamKind::ALL {
@@ -83,7 +87,7 @@ pub unsafe extern "C" fn mi_extract(
     };
     let ctx = Ctx(ctx);
     let mut mi = MediaInfo::new();
-    let recognised = mi.open_reader(
+    let result = mi.try_open_reader(
         size,
         Box::new(move |offset, buf: &mut [u8]| {
             let c = &ctx;
@@ -91,7 +95,7 @@ pub unsafe extern "C" fn mi_extract(
         }),
         name.as_deref(),
     );
-    let bytes = fields_json(&mi, recognised).into_bytes().into_boxed_slice();
+    let bytes = fields_json(&mi, &result).into_bytes().into_boxed_slice();
     *out_len = bytes.len();
     Box::into_raw(bytes) as *mut u8
 }
@@ -131,6 +135,23 @@ mod tests {
         assert!(json.starts_with("{\"recognised\":true,"), "{json}");
         assert!(json.contains("{\"stream\":\"General\",\"index\":0,\"key\":\"Format\",\"value\":\"MXF\"}"), "{json}");
         assert!(json.contains("\"stream\":\"Video\",\"index\":0,\"key\":\"Width\",\"value\":\"64\""), "{json}");
+    }
+
+    unsafe extern "C" fn read_nothing(_: *mut c_void, _: u64, _: *mut u8, _: usize) -> usize {
+        0
+    }
+
+    #[test]
+    fn reports_a_short_read() {
+        let mut len = 0usize;
+        let json = unsafe {
+            let p = mi_extract(4096, read_nothing, std::ptr::null_mut(), std::ptr::null(), 0, &mut len);
+            let s = String::from_utf8(std::slice::from_raw_parts(p, len).to_vec()).unwrap();
+            mi_free(p, len);
+            s
+        };
+        assert!(json.starts_with("{\"recognised\":false,\"error\":\"media I/O error"), "{json}");
+        assert!(json.ends_with("\"fields\":[]}"), "{json}");
     }
 
     #[test]
