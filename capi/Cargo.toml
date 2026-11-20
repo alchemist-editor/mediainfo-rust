@@ -1,0 +1,19 @@
+[package]
+name = "mediainfo-capi"
+version = "0.1.0"
+edition = "2021"
+description = "C ABI over mediainfo-rust: every field of a file read through a caller's range-read callback, as JSON"
+license = "BSD-2-Clause"
+publish = false
+
+[lib]
+name = "mediainfo_capi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+mediainfo-rust = { path = ".." }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
