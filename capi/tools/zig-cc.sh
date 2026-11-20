@@ -9,6 +9,17 @@
 # the target, a module-definition file is a plain input rather than `-Wl,`,
 # and the runtime libraries are Zig's own.
 : "${ZIG_CC_TARGET:?set ZIG_CC_TARGET}"
+synchronization_lib() {
+  dir="${TMPDIR:-/tmp}/zig-cc-$(id -u)"
+  case "$ZIG_CC_TARGET" in aarch64-*) machine=arm64 ;; *) machine=i386:x86-64 ;; esac
+  lib="$dir/libsynchronization-$machine.a"
+  if [ ! -f "$lib" ]; then
+    mkdir -p "$dir"
+    printf 'LIBRARY api-ms-win-core-synch-l1-2-0.dll\nEXPORTS\nWaitOnAddress\nWakeByAddressAll\nWakeByAddressSingle\n' >"$dir/synchronization.def"
+    "${ZIG:-zig}" dlltool -m "$machine" -d "$dir/synchronization.def" -l "$lib.tmp.$$" && mv "$lib.tmp.$$" "$lib"
+  fi
+  printf '%s' "$lib"
+}
 out=""
 skip_next=""
 for a in "$@"; do
@@ -21,7 +32,10 @@ for a in "$@"; do
     # symbol actually used would still fail the link as undefined.
     -liconv) ;;
     -Wl,*.def) out="$out '${a#-Wl,}'" ;;
-    -nolibc|--unwindlib=none|-lmingw32|-lmingwex|-lmsvcrt|-lgcc_eh|-lgcc|-l:libpthread.a) ;;
+    -nolibc|--unwindlib=*|-static-libgcc|-lmingw32|-lmingwex|-lmsvcrt|-lgcc_eh|-lgcc|-l:libpthread.a) ;;
+    # Newer Rust std links WaitOnAddress and friends from synchronization,
+    # an import library Zig's MinGW-w64 set lacks: make it from its .def.
+    -lsynchronization) out="$out '$(synchronization_lib)'" ;;
     *) out="$out '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'" ;;
   esac
 done
