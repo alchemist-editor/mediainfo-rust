@@ -37,8 +37,13 @@ int main(int argc, char **argv) {
   fclose(f);
   if (!json) { fprintf(stderr, "mi_extract returned NULL\n"); return 1; }
   printf("%.*s\n", (int)(len < 400 ? len : 400), (const char *)json);
-  int ok = len > 0 && strstr((const char *)json, "\"recognised\":true") != NULL &&
-           strstr((const char *)json, "\"key\":") != NULL;
+  /* The result is exactly len bytes, with no NUL: search a terminated copy. */
+  char *text = malloc(len + 1);
+  if (!text) { mi_free(json, len); return 1; }
+  memcpy(text, json, len);
+  text[len] = 0;
   mi_free(json, len);
+  int ok = len > 0 && strstr(text, "\"recognised\":true") != NULL && strstr(text, "\"key\":") != NULL;
+  free(text);
   return ok ? 0 : 1;
 }

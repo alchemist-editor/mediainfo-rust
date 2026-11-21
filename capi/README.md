@@ -25,6 +25,7 @@ parser panic is caught inside the library and reported as the JSON's
 ## Releases
 
 Tag `capi-vX.Y.Z` and push it. `.github/workflows/capi-release.yml` runs the
-tests, builds every target on Linux, loads each library on its own platform,
-and attaches `mediainfo-capi-X.Y.Z-<target>.tar.gz` (with a `.sha256`) to the
-release.
+tests and builds every target on Linux. It smoke-tests native loading on
+Apple Silicon, Windows x64 and ARM64, and Linux x64 and ARM64. Intel macOS
+is still built and packaged but has no native smoke test in CI. The release
+includes `mediainfo-capi-X.Y.Z-<target>.tar.gz` and its `.sha256` for every target.
